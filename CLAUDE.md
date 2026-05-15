@@ -4,7 +4,7 @@ OpenTofu (Terraform-compatible) code that provisions a **dedicated AWS EC2 serve
 
 ## What this repo does
 
-- Provisions an EC2 instance (Ubuntu 22.04, `t3.xlarge`) with a separate EBS data volume.
+- Provisions an EC2 instance (Ubuntu 24.04, `t3.xlarge`) with a separate EBS data volume.
 - Runs a cloud-init bootstrap script that installs Docker, clones `getsentry/self-hosted`, configures Sentry, and starts it.
 - Puts Nginx in front as a TLS-terminating reverse proxy (Let's Encrypt via certbot).
 - Optionally creates a Route53 DNS A record pointing to the Elastic IP.

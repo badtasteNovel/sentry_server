@@ -12,7 +12,9 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
+set -a
 source .env
+set +a
 
 # Validate required vars
 for var in UBUNTU_PASSWORD_HASH SENTRY_DOMAIN ADMIN_EMAIL ADMIN_PASSWORD; do

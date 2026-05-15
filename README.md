@@ -9,7 +9,7 @@ Sentry self-hosted 部署在 VMware ESXi 虛擬機上，取代 `lg-laravel` MES 
 
 ```
 ESXi Host (128 GB RAM / 16 core)
-    └── Sentry VM (Ubuntu 22.04, 4 vCPU, 16 GB RAM)
+    └── Sentry VM (Ubuntu 24.04, 4 vCPU, 16 GB RAM)
             ├── /dev/sda  100 GB  → 系統碟
             ├── /dev/sdb  200 GB  → /data（Sentry 資料，獨立磁碟）
             ├── Nginx (80/443)  ← TLS via Let's Encrypt
@@ -72,7 +72,7 @@ task
 
 將以下兩個檔案上傳到 ESXi Datastore（透過 ESXi Web UI → Storage → Datastore Browser）：
 - `autoinstall/seed.iso`
-- Ubuntu 22.04 Server ISO（從 [ubuntu.com/download/server](https://ubuntu.com/download/server) 下載）
+- Ubuntu 24.04 Server ISO（從 [ubuntu.com/download/server](https://ubuntu.com/download/server) 下載）
 
 ### Step 4 — ESXi 建 VM
 
@@ -85,7 +85,7 @@ task
 | RAM | 16 GB |
 | 磁碟 1 | 100 GB（系統） |
 | 磁碟 2 | 200 GB（資料） |
-| CD-ROM 1 | Ubuntu 22.04 Server ISO |
+| CD-ROM 1 | Ubuntu 24.04 Server ISO |
 | CD-ROM 2 | seed.iso |
 | 網路 | VMXNET3（DHCP） |
 
