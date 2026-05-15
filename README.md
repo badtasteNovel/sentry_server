@@ -68,30 +68,70 @@ task
 3. 讀取 `.env` 產出 `autoinstall/user-data`
 4. 打包成 `autoinstall/seed.iso`
 
-### Step 3 — 上傳到 ESXi
+### Step 3 — 下載 Ubuntu 24.04 Server ISO
 
-將以下兩個檔案上傳到 ESXi Datastore（透過 ESXi Web UI → Storage → Datastore Browser）：
-- `autoinstall/seed.iso`
-- Ubuntu 24.04 Server ISO（從 [ubuntu.com/download/server](https://ubuntu.com/download/server) 下載）
+前往官網下載 ISO（約 2.5 GB）：
 
-### Step 4 — ESXi 建 VM
+```
+https://ubuntu.com/download/server
+```
 
-在 ESXi Web UI 建立新 VM，規格如下：
+選 **Ubuntu Server 24.04 LTS** → 下載 `ubuntu-24.04-live-server-amd64.iso`。
+
+> **Ubuntu ISO 只需要下載上傳一次，之後建新 VM 可以重複使用。**  
+> 只有 `seed.iso` 在修改設定後才需要重新產出。
+
+---
+
+### Step 4 — 上傳 ISO 到 ESXi Datastore
+
+1. 瀏覽器開 `https://<ESXi IP>` 登入
+2. 左側 **Storage** → 選你的 Datastore → 右上角 **Datastore Browser**
+3. 點 **Upload**，分別上傳：
+   - `ubuntu-24.04-live-server-amd64.iso`
+   - `autoinstall/seed.iso`
+
+---
+
+### Step 5 — ESXi 建 VM
+
+**Create / Register VM** → 填入以下規格：
 
 | 項目 | 設定 |
 |------|------|
+| Name | `sentry` |
 | OS | Ubuntu Linux (64-bit) |
 | vCPU | 4 |
 | RAM | 16 GB |
-| 磁碟 1 | 100 GB（系統） |
-| 磁碟 2 | 200 GB（資料） |
-| CD-ROM 1 | Ubuntu 24.04 Server ISO |
-| CD-ROM 2 | seed.iso |
-| 網路 | VMXNET3（DHCP） |
+| 磁碟 1 | 100 GB（系統碟） |
+| 磁碟 2 | 新增第二顆 200 GB（資料碟） |
+| CD-ROM 1 | `ubuntu-24.04-live-server-amd64.iso` |
+| CD-ROM 2 | 新增第二個 CD-ROM → `seed.iso` |
+| 網路介面卡 | VMXNET3 |
 
-### Step 5 — 開機
+---
 
-啟動 VM，Ubuntu 自動完成安裝並重開機，首次重開後 `sentry-bootstrap` 服務自動執行安裝（約 15～20 分鐘）。
+### Step 6 — 開機與自動安裝
+
+啟動 VM 後，整個過程**完全自動，不會出現任何需要你回答的提示**。
+
+以下是開機後的自動流程：
+
+```
+開機
+ └── Ubuntu installer 讀取 seed.iso 裡的 user-data
+       └── 自動分割磁碟、安裝 Ubuntu（約 3~5 分鐘）
+             └── 自動重開機
+                   └── sentry-bootstrap 服務啟動
+                         ├── 安裝 Docker
+                         ├── 格式化 /dev/sdb → 掛載 /data
+                         ├── clone sentry self-hosted
+                         ├── 執行 install.sh（資料庫 migration 等）
+                         ├── 設定 Nginx + Let's Encrypt TLS
+                         └── 啟動 Sentry（約 15~20 分鐘）
+```
+
+> 如果看到 Ubuntu installer 的文字介面停在某個畫面，**不需要操作**，稍等幾秒它會自動繼續。
 
 ### Step 6 — 監控進度
 
