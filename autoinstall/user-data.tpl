@@ -1,0 +1,267 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+    variant: ''
+
+  # VMware VMXNET3 → ens192 / E1000 → ens160，兩個都設 DHCP
+  network:
+    version: 2
+    ethernets:
+      ens192:
+        dhcp4: true
+        optional: true
+      ens160:
+        dhcp4: true
+        optional: true
+
+  # 系統裝在第一顆磁碟 (sda)，第二顆 (sdb) 由 bootstrap 格式化掛載成 /data
+  storage:
+    layout:
+      name: direct
+
+  identity:
+    hostname: sentry
+    username: ubuntu
+    password: '__UBUNTU_PASSWORD_HASH__'
+
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys: []
+
+  packages:
+    - curl
+    - git
+    - ca-certificates
+    - gnupg
+    - lsb-release
+    - jq
+    - nginx
+    - certbot
+    - python3-certbot-nginx
+    - unzip
+
+  late-commands:
+
+    # ── 1. 寫入 Sentry 設定檔 ─────────────────────────────────────────────
+    - |
+      cat > /target/etc/sentry-install.conf << 'CONF'
+      SENTRY_VERSION="__SENTRY_VERSION__"
+      COMPOSE_PROFILE="__COMPOSE_PROFILE__"
+      DOMAIN="__SENTRY_DOMAIN__"
+      ADMIN_EMAIL="__ADMIN_EMAIL__"
+      ADMIN_PASSWORD="__ADMIN_PASSWORD__"
+      SMTP_HOST="__SMTP_HOST__"
+      SMTP_PORT="__SMTP_PORT__"
+      SMTP_USER="__SMTP_USER__"
+      SMTP_PASSWORD="__SMTP_PASSWORD__"
+      SMTP_USE_TLS="__SMTP_USE_TLS__"
+      DATA_DEVICE="/dev/sdb"
+      DATA_MOUNT="/data"
+      SENTRY_DIR="/opt/sentry"
+      CONF
+
+    # ── 2. 寫入 bootstrap script ──────────────────────────────────────────
+    - |
+      python3 << 'PYEOF'
+      script = r'''#!/usr/bin/env bash
+      # Sentry first-boot installer — reads config from /etc/sentry-install.conf
+      set -euo pipefail
+      exec > >(tee /var/log/sentry-bootstrap.log | logger -t sentry-bootstrap) 2>&1
+
+      source /etc/sentry-install.conf
+
+      # ── Docker ────────────────────────────────────────────────────────────
+      export DEBIAN_FRONTEND=noninteractive
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      chmod a+r /etc/apt/keyrings/docker.gpg
+      echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+        https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+        > /etc/apt/sources.list.d/docker.list
+      apt-get update -y
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      systemctl enable --now docker
+      usermod -aG docker ubuntu
+
+      # ── Format + mount /dev/sdb as /data ──────────────────────────────────
+      for i in $(seq 1 30); do
+        test -b "$DATA_DEVICE" && break
+        echo "Waiting for $DATA_DEVICE... ($i/30)"
+        sleep 2
+      done
+      if ! blkid "$DATA_DEVICE" 2>/dev/null | grep -q ext4; then
+        mkfs.ext4 -L sentry-data "$DATA_DEVICE"
+      fi
+      mkdir -p "$DATA_MOUNT"
+      echo "LABEL=sentry-data  $DATA_MOUNT  ext4  defaults,nofail  0  2" >> /etc/fstab
+      mount -a
+      mkdir -p \
+        "$DATA_MOUNT/sentry-postgres" \
+        "$DATA_MOUNT/sentry-redis" \
+        "$DATA_MOUNT/sentry-zookeeper" \
+        "$DATA_MOUNT/sentry-kafka" \
+        "$DATA_MOUNT/sentry-clickhouse" \
+        "$DATA_MOUNT/sentry-symbolicator" \
+        "$DATA_MOUNT/sentry-uploads"
+      chown -R 999:999 "$DATA_MOUNT" 2>/dev/null || true
+
+      # ── Clone sentry self-hosted ──────────────────────────────────────────
+      git clone --depth 1 --branch "$SENTRY_VERSION" \
+        https://github.com/getsentry/self-hosted.git "$SENTRY_DIR"
+      cd "$SENTRY_DIR"
+
+      # ── Bind-mount docker volumes to /data ────────────────────────────────
+      cat > "$SENTRY_DIR/docker-compose.override.yml" << OVERRIDE
+      version: "3.9"
+      volumes:
+        sentry-postgres:
+          driver: local
+          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-postgres"}
+        sentry-redis:
+          driver: local
+          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-redis"}
+        sentry-zookeeper:
+          driver: local
+          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-zookeeper"}
+        sentry-kafka:
+          driver: local
+          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-kafka"}
+        sentry-clickhouse:
+          driver: local
+          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-clickhouse"}
+        sentry-symbolicator:
+          driver: local
+          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-symbolicator"}
+        sentry-uploads:
+          driver: local
+          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-uploads"}
+      OVERRIDE
+
+      # ── Sentry config ─────────────────────────────────────────────────────
+      cp sentry/config.example.yml sentry/config.yml
+      cp sentry/sentry.conf.example.py sentry/sentry.conf.py
+      sed -i "s|system.url-prefix:.*|system.url-prefix: 'https://$DOMAIN'|" sentry/config.yml
+      if [[ -n "$SMTP_HOST" ]]; then
+        cat >> sentry/config.yml << MAIL
+
+      mail.backend: 'smtp'
+      mail.host: '$SMTP_HOST'
+      mail.port: $SMTP_PORT
+      mail.username: '$SMTP_USER'
+      mail.password: '$SMTP_PASSWORD'
+      mail.use-tls: $SMTP_USE_TLS
+      mail.from: 'sentry@$DOMAIN'
+      MAIL
+      fi
+
+      # ── Run official installer ────────────────────────────────────────────
+      export COMPOSE_PROFILES="$COMPOSE_PROFILE"
+      export SENTRY_ADMIN_USERNAME="$ADMIN_EMAIL"
+      export SENTRY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
+      export SKIP_USER_CREATION=0
+      bash install.sh --no-user-prompt
+
+      # ── Sentry systemd service ────────────────────────────────────────────
+      cat > /etc/systemd/system/sentry.service << SERVICE
+      [Unit]
+      Description=Sentry self-hosted
+      Requires=docker.service
+      After=docker.service network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=$SENTRY_DIR
+      Environment=COMPOSE_PROFILES=$COMPOSE_PROFILE
+      ExecStart=/usr/bin/docker compose up -d --remove-orphans
+      ExecStop=/usr/bin/docker compose down
+      TimeoutStartSec=300
+      TimeoutStopSec=120
+
+      [Install]
+      WantedBy=multi-user.target
+      SERVICE
+      systemctl daemon-reload
+      systemctl enable sentry
+
+      # ── Nginx + Let's Encrypt ─────────────────────────────────────────────
+      mkdir -p /var/www/certbot
+      cat > /etc/nginx/sites-available/sentry << NGINX_HTTP
+      server {
+          listen 80;
+          server_name $DOMAIN;
+          location /.well-known/acme-challenge/ { root /var/www/certbot; }
+          location / { return 301 https://\$host\$request_uri; }
+      }
+      NGINX_HTTP
+      ln -sf /etc/nginx/sites-available/sentry /etc/nginx/sites-enabled/sentry
+      rm -f /etc/nginx/sites-enabled/default
+      nginx -t && systemctl reload nginx
+
+      certbot certonly --webroot -w /var/www/certbot -d "$DOMAIN" \
+        --email "$ADMIN_EMAIL" --agree-tos --non-interactive --keep-until-expiring
+
+      cat > /etc/nginx/sites-available/sentry << NGINX_HTTPS
+      upstream sentry_web { server 127.0.0.1:9000; }
+      server {
+          listen 80; server_name $DOMAIN;
+          return 301 https://\$host\$request_uri;
+      }
+      server {
+          listen 443 ssl http2; server_name $DOMAIN;
+          ssl_certificate     /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+          ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+          ssl_protocols TLSv1.2 TLSv1.3;
+          client_max_body_size 20m;
+          location / {
+              proxy_pass http://sentry_web;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$scheme;
+              proxy_read_timeout 120s;
+          }
+      }
+      NGINX_HTTPS
+      nginx -t && systemctl reload nginx
+      systemctl enable --now certbot.timer
+
+      # ── Start Sentry ──────────────────────────────────────────────────────
+      systemctl start sentry
+      echo "=== Bootstrap complete. Sentry $SENTRY_VERSION running at https://$DOMAIN ==="
+      '''
+      with open('/target/opt/sentry-bootstrap.sh', 'w') as f:
+          f.write(script)
+      import os
+      os.chmod('/target/opt/sentry-bootstrap.sh', 0o755)
+      PYEOF
+
+    # ── 3. Systemd first-boot service ─────────────────────────────────────
+    - |
+      cat > /target/etc/systemd/system/sentry-bootstrap.service << 'SVC'
+      [Unit]
+      Description=Sentry first-boot installation
+      After=network-online.target
+      Wants=network-online.target
+      ConditionPathExists=!/var/log/sentry-bootstrap.log
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/opt/sentry-bootstrap.sh
+      StandardOutput=journal+console
+      TimeoutStartSec=1800
+
+      [Install]
+      WantedBy=multi-user.target
+      SVC
+
+    # ── 4. Enable first-boot service ───────────────────────────────────────
+    - curtin in-target -- systemctl enable sentry-bootstrap.service

@@ -1,0 +1,68 @@
+version: '3'
+
+tasks:
+
+  # ── Entry point ─────────────────────────────────────────────────────────────
+  # 執行 `task` 會依序：安裝缺少的工具 → 確認 .env → 產出 seed.iso
+  default:
+    desc: "全流程：安裝相依套件 → 確認 .env → 產出 seed.iso"
+    cmds:
+      - task: _install-python3
+      - task: _install-iso-tool
+      - task: _ensure-env
+      - task: seed-iso
+
+  # ── 最終目標 ────────────────────────────────────────────────────────────────
+  seed-iso:
+    desc: "讀取 autoinstall/.env → 產出 user-data → 打包 autoinstall/seed.iso"
+    dir: autoinstall
+    cmds:
+      - bash build-seed-iso.sh
+
+  # ── Internal tasks ──────────────────────────────────────────────────────────
+
+  _install-python3:
+    internal: true
+    desc: Install python3 if not present
+    status:
+      - command -v python3
+    cmds:
+      - cmd: sudo apt-get install -y python3
+        platforms: [linux]
+      - cmd: brew install python3
+        platforms: [darwin]
+
+  _install-iso-tool:
+    internal: true
+    desc: Install genisoimage (or xorriso on macOS) if no ISO builder is present
+    status:
+      # 三擇一，有任何一個就略過
+      - command -v genisoimage || command -v mkisofs || command -v xorriso
+    cmds:
+      - cmd: sudo apt-get update -y && sudo apt-get install -y genisoimage
+        platforms: [linux]
+      - cmd: brew install xorriso
+        platforms: [darwin]
+
+  _ensure-env:
+    internal: true
+    desc: Copy .env.example to .env if .env doesn't exist, then stop and ask user to fill it
+    dir: autoinstall
+    cmds:
+      - |
+        if [ ! -f .env ]; then
+          cp .env.example .env
+          echo ""
+          echo "┌─────────────────────────────────────────────────────────┐"
+          echo "│  .env 已建立，請填入以下必填欄位後再次執行 task         │"
+          echo "│                                                         │"
+          echo "│  vim autoinstall/.env                                   │"
+          echo "│                                                         │"
+          echo "│  必填：UBUNTU_PASSWORD_HASH  (openssl passwd -6 'pw')  │"
+          echo "│         SENTRY_DOMAIN                                   │"
+          echo "│         ADMIN_EMAIL                                     │"
+          echo "│         ADMIN_PASSWORD                                  │"
+          echo "└─────────────────────────────────────────────────────────┘"
+          echo ""
+          exit 1
+        fi
