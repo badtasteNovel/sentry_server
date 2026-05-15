@@ -1,66 +1,59 @@
-# CLAUDE.md — Sentry Self-Hosted Infrastructure
+# CLAUDE.md — Sentry Self-Hosted (ESXi Autoinstall)
 
-OpenTofu (Terraform-compatible) code that provisions a **dedicated AWS EC2 server** running Sentry self-hosted via docker-compose. This replaces Laravel Telescope in the `lg-laravel` Manufacturing Execution System (MES) project.
+Ubuntu Autoinstall + Seed ISO 方式，在 VMware ESXi 上自動部署 Sentry self-hosted，取代 `lg-laravel` MES 專案的 Laravel Telescope。
 
-## What this repo does
+---
 
-- Provisions an EC2 instance (Ubuntu 24.04, `t3.xlarge`) with a separate EBS data volume.
-- Runs a cloud-init bootstrap script that installs Docker, clones `getsentry/self-hosted`, configures Sentry, and starts it.
-- Puts Nginx in front as a TLS-terminating reverse proxy (Let's Encrypt via certbot).
-- Optionally creates a Route53 DNS A record pointing to the Elastic IP.
-- All persistent data (Postgres, Redis, Kafka, ClickHouse) lives on the `/data` EBS volume so the EC2 instance can be replaced without data loss.
+## 這個 repo 做什麼
 
-## Directory map
+- 透過 **Seed ISO（cidata）** 讓 Ubuntu 24.04 Server 全自動安裝，不需要人工互動。
+- 首次重開機後，`sentry-bootstrap` systemd service 自動安裝 Docker、Sentry self-hosted、Nginx、Let's Encrypt TLS。
+- 所有持久資料（Postgres、Redis、Kafka、ClickHouse）存在第二顆磁碟 `/dev/sdb`，掛載為 `/data`，VM 重建不會遺失資料。
+
+---
+
+## 目錄結構
 
 ```
-main.tf                 # Root composition — calls all modules
-variables.tf            # All inputs (see below for key ones)
-outputs.tf              # public_ip, sentry_url, ssh_command
-providers.tf            # AWS provider + default tag block
-versions.tf             # Version constraints + S3 backend config
-Makefile                # make init / plan / apply / ssh / logs
-modules/ec2/            # EC2 instance + root EBS + data EBS + attachment
-modules/security_group/ # Ingress rules for 80, 443, 22, optional relay port 3000
-modules/dns/            # Route53 A record (count=0 when route53_zone_id is empty)
-scripts/bootstrap.sh.tpl  # Bash template rendered by templatefile() — runs on first boot
-config/laravel-sentry.env.example  # .env snippet for the Laravel project
-environments/production.tfvars
-environments/staging.tfvars
+Taskfile.yml                       # 唯一入口：task → 裝依賴 + 產 seed.iso
+autoinstall/
+  .env.example                     # 設定範本（commit）
+  .env                             # 實際設定（gitignored）
+  user-data.tpl                    # Autoinstall 模板，placeholder 用 __VAR__ 格式
+  meta-data                        # cloud-init 必要檔，固定不變
+  generate.sh                      # set -a; source .env → envsubst → user-data
+  build-seed-iso.sh                # generate.sh + genisoimage → seed.iso
+config/
+  laravel-sentry.env.example       # 貼到 lg-laravel .env 的範例片段
+scripts/
+  bootstrap.sh.tpl                 # 參考用原稿，實際內嵌在 user-data.tpl
 ```
 
-## Key variables
+> `.tf` 檔（modules/、environments/ 等）是早期 AWS OpenTofu 版本的殘留，目前未使用。
 
-| Variable | Default | Notes |
-|----------|---------|-------|
-| `aws_region` | `ap-southeast-1` | Singapore — same region as lg-laravel |
-| `instance_type` | `t3.xlarge` | 4 vCPU, 16 GB RAM. Minimum for errors-only profile. |
-| `compose_profile` | `errors-only` | `feature-complete` needs 16 GB RAM (t3.2xlarge) |
-| `sentry_version` | `26.4.2` | Match a tag from getsentry/self-hosted releases |
-| `domain_name` | required | e.g. `sentry.yourdomain.com` |
-| `route53_zone_id` | `""` (skip DNS) | Set to create DNS record automatically |
-| `laravel_server_cidr` | `""` | Set to Laravel server private IP /32 to open relay port 3000 directly |
-| `data_volume_size_gb` | `200` | EBS gp3 volume mounted at `/data` |
+---
 
-## Common tasks
+## 常用指令
 
-### First-time deploy
 ```bash
-make init
-# Edit environments/production.tfvars (or a .local copy)
-make plan ENV=production
-make apply ENV=production
+# 產出 seed.iso（第一次會裝 python3 + genisoimage）
+task
+
+# 只初始化 .env（從 .env.example 複製）
+task init
+
+# 只產 seed.iso（已裝好依賴、.env 已填）
+task seed-iso
 ```
 
-### Watch bootstrap progress
 ```bash
-make logs ENV=production   # streams sentry systemd logs via SSH
-# or on the server:
-sudo tail -f /var/log/sentry-bootstrap.log
+# 在 VM 上監控 bootstrap 進度
+sudo journalctl -u sentry-bootstrap -f
+sudo cat /var/log/sentry-bootstrap.log
 ```
 
-### Upgrade Sentry version
-Update `sentry_version` in tfvars but do NOT re-apply tofu (user_data changes are ignored by `lifecycle.ignore_changes` to prevent destroy/recreate). Instead SSH in:
 ```bash
+# 升級 Sentry 版本（SSH 進 VM 後執行）
 cd /opt/sentry
 git fetch --tags && git checkout <new-version>
 docker compose pull
@@ -68,48 +61,41 @@ bash install.sh --skip-user-creation --no-user-prompt
 systemctl restart sentry
 ```
 
-### Resize the instance
+---
+
+## 設計決策
+
+- **ESXi VM 不用 K8s** — Sentry self-hosted 官方只支援 docker-compose，裝進既有 K8s 需要大量客製化。
+- **Seed ISO 不改 Ubuntu ISO 本體** — Ubuntu ISO 只上傳一次重複使用，seed.iso 只有 ~400KB，改設定重新產出即可。
+- **`__VAR__` 替換格式** — 用 Python `str.replace()` 而非 `envsubst`，避免 user-data.tpl 內嵌的 bash 變數（`$DOMAIN` 等）被誤替換。
+- **`set -a` in generate.sh** — `source .env` 不會自動 export，加 `set -a` 才能讓 Python subprocess 透過 `os.environ` 讀到變數。
+- **errors-only compose profile** — 需要 16 GB RAM。`feature-complete` 需 32 GB，增加 replays、profiling、metrics，目前 MES 用不到。
+
+---
+
+## 連接 lg-laravel
+
 ```bash
-# Edit instance_type in tfvars, then:
-make apply ENV=production
-# tofu will stop → resize → start the instance in-place
+composer require sentry/sentry-laravel
+composer remove laravel/telescope
 ```
 
-### SSH into the server
-```bash
-make ssh ENV=production
-```
+DSN 從 Sentry UI → Settings → Projects → Client Keys 取得，加入 `lg-laravel/.env`：
 
-## Architecture decisions
-
-- **EC2 not K8s** — Sentry self-hosted is officially docker-compose based. Running it inside the existing lg-laravel K8s cluster would require significant customization and StatefulSet management for Kafka/ClickHouse. A dedicated VM is simpler to operate and matches the Sentry team's supported deployment model.
-
-- **errors-only compose profile** — The full `feature-complete` profile requires 16 GB RAM and adds replays, profiling, and metrics consumers. For a factory MES replacing Telescope, error tracking is the primary need. Switch to `feature-complete` by changing `instance_type` to `t3.2xlarge` and `compose_profile` to `feature-complete`.
-
-- **Separate EBS data volume** — The root volume is ephemeral from an operational standpoint. Postgres, Redis, Kafka, and ClickHouse data directories are bind-mounted from the `/data` EBS volume (200 GB gp3). This means you can terminate and recreate the EC2 instance without losing Sentry history.
-
-- **`user_data_replace_on_change = false`** — Prevents tofu from destroying and recreating the EC2 instance if the bootstrap script is edited after initial deploy. The script only runs once on first boot anyway.
-
-- **Nginx in front of Sentry** — Sentry's docker-compose exposes port 9000 on localhost. Nginx terminates TLS, handles Let's Encrypt renewals, and keeps the EIP security group rules simple (80/443 only).
-
-## What NOT to do
-
-- Do not run `make destroy` without taking an EBS snapshot first. The data volume is deleted on destroy.
-- Do not change `user_data_replace_on_change = true` — this would cause the instance to be destroyed and recreated on any bootstrap script edit, losing data if the EBS volume is somehow not reattached correctly.
-- Do not store real passwords in `environments/*.tfvars` files that are committed to git. Use a `.local` copy (gitignored) or pass via environment variables: `TF_VAR_sentry_admin_password=...`.
-- Do not set `ssh_allowed_cidr_blocks = ["0.0.0.0/0"]` in production. Restrict to your office/VPN CIDR.
-
-## Connecting to lg-laravel
-
-After deploying, get the DSN from Sentry UI → Settings → Projects → \<project\> → Client Keys.
-
-Add to `lg-laravel/.env`:
 ```ini
 SENTRY_LARAVEL_DSN=https://<key>@sentry.yourdomain.com/<project-id>
 SENTRY_TRACES_SAMPLE_RATE=0.1
+SENTRY_SEND_DEFAULT_PII=false
 ```
 
-Install the SDK: `composer require sentry/sentry-laravel`
-Then remove Telescope: `composer remove laravel/telescope`
+---
 
-See `config/laravel-sentry.env.example` for the full `.env` snippet.
+## 下一步：OpenTelemetry 橋接
+
+Sentry 支援透過 **OpenTelemetry（OTel）** 接收 traces，可以讓 lg-laravel 統一用 OTel SDK 送資料，而不直接依賴 Sentry SDK。
+
+待辦：
+- 在 Sentry self-hosted 啟用 OTel ingest（`OTEL_` 相關設定）
+- lg-laravel 安裝 `open-telemetry/opentelemetry-php` + Sentry exporter
+- 設定 OTLP exporter 指向 `https://sentry.yourdomain.com/api/<project>/envelope/`
+- 確認 Temporal workflow traces 能正確送進 Sentry
