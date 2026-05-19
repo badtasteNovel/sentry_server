@@ -49,26 +49,34 @@ vim .env   # 第一次執行 task 時會自動建立此檔案
 
 | 欄位 | 說明 |
 |------|------|
-| `UBUNTU_PASSWORD_HASH` | 先跑 `openssl passwd -6 'your-password'`，把輸出（含 `$6$...`）貼進來，整個值用單引號包住 |
 | `SENTRY_DOMAIN` | Sentry 的 domain，例如 `sentry.example.com`（需指向這台 VM 的 IP） |
 | `ADMIN_EMAIL` | Sentry 登入帳號 |
 | `ADMIN_PASSWORD` | Sentry 登入密碼 |
 | `SMTP_*` | 不需要 email 通知就全部留空 |
 
-### Step 2 — 產出 seed.iso
+### Step 2 — 匯入 SSH Public Key
+
+```bash
+task generate-ssh-key
+```
+
+這個指令會把你本機的 `~/.ssh/id_ed25519.pub`（或 `id_rsa.pub`）複製到 `cert/`。之後 SSH 進 VM 不需要打任何密碼。
+
+> 若還沒有 SSH key，請先執行 `ssh-keygen -t ed25519` 產生。
+
+### Step 3 — 產出 seed.iso
 
 ```bash
 # 在 /var/projects/sentry 目錄下執行
-task
+task seed-iso
 ```
 
 這個指令會自動：
-1. 安裝缺少的工具（`python3`、`genisoimage`），已安裝則略過
-2. 若 `.env` 不存在則建立並提示填寫，填好後再跑一次 `task`
-3. 讀取 `.env` 產出 `autoinstall/user-data`
-4. 打包成 `autoinstall/seed.iso`
+1. 讀取 `autoinstall/.env` 與 `cert/` 裡的 SSH public key
+2. 產出 `autoinstall/user-data`
+3. 打包成 `autoinstall/seed.iso`
 
-### Step 3 — 下載 Ubuntu 24.04 Server ISO
+### Step 4 — 下載 Ubuntu 24.04 Server ISO
 
 前往官網下載 ISO（約 2.5 GB）：
 
@@ -76,24 +84,40 @@ task
 https://ubuntu.com/download/server
 ```
 
-選 **Ubuntu Server 24.04 LTS** → 下載 `ubuntu-24.04-live-server-amd64.iso`。
+選 **Ubuntu Server 24.04 LTS** → 下載 `ubuntu-24.04.4-live-server-amd64.iso`，**放到 repo 根目錄**：
 
-> **Ubuntu ISO 只需要下載上傳一次，之後建新 VM 可以重複使用。**  
+```
+sentry/
+└── ubuntu-24.04.4-live-server-amd64.iso   ← 放這裡（已 gitignore，不會 commit）
+```
+
+> **Ubuntu ISO 只需要下載一次，之後建新 VM 可以重複使用。**  
 > 只有 `seed.iso` 在修改設定後才需要重新產出。
+
+### Step 4.5 — （選用）本機 QEMU 測試
+
+不需要 ESXi，在本機用 QEMU 跑完整 autoinstall 流程驗證設定：
+
+```bash
+task test
+```
+
+這個指令會自動安裝 QEMU、建一顆暫時的虛擬磁碟，然後開機跑 Ubuntu autoinstall。  
+確認安裝流程無誤後再上傳到 ESXi，省去反覆重建 VM 的時間。
 
 ---
 
-### Step 4 — 上傳 ISO 到 ESXi Datastore
+### Step 5 — 上傳 ISO 到 ESXi Datastore
 
 1. 瀏覽器開 `https://<ESXi IP>` 登入
 2. 左側 **Storage** → 選你的 Datastore → 右上角 **Datastore Browser**
 3. 點 **Upload**，分別上傳：
-   - `ubuntu-24.04-live-server-amd64.iso`
+   - `ubuntu-24.04.4-live-server-amd64.iso`
    - `autoinstall/seed.iso`
 
 ---
 
-### Step 5 — ESXi 建 VM
+### Step 6 — ESXi 建 VM
 
 **Create / Register VM** → 填入以下規格：
 
@@ -105,13 +129,13 @@ https://ubuntu.com/download/server
 | RAM | 16 GB |
 | 磁碟 1 | 100 GB（系統碟） |
 | 磁碟 2 | 新增第二顆 200 GB（資料碟） |
-| CD-ROM 1 | `ubuntu-24.04-live-server-amd64.iso` |
+| CD-ROM 1 | `ubuntu-24.04.4-live-server-amd64.iso` |
 | CD-ROM 2 | 新增第二個 CD-ROM → `seed.iso` |
 | 網路介面卡 | VMXNET3 |
 
 ---
 
-### Step 6 — 開機與自動安裝
+### Step 7 — 開機與自動安裝
 
 啟動 VM 後，整個過程**完全自動，不會出現任何需要你回答的提示**。
 
@@ -133,7 +157,7 @@ https://ubuntu.com/download/server
 
 > 如果看到 Ubuntu installer 的文字介面停在某個畫面，**不需要操作**，稍等幾秒它會自動繼續。
 
-### Step 6 — 監控進度
+### Step 8 — 監控進度
 
 ```bash
 ssh ubuntu@<VM_IP>

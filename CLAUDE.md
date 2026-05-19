@@ -29,8 +29,6 @@ scripts/
   bootstrap.sh.tpl                 # 參考用原稿，實際內嵌在 user-data.tpl
 ```
 
-> `.tf` 檔（modules/、environments/ 等）是早期 AWS OpenTofu 版本的殘留，目前未使用。
-
 ---
 
 ## 常用指令
@@ -42,7 +40,10 @@ task
 # 只初始化 .env（從 .env.example 複製）
 task init
 
-# 只產 seed.iso（已裝好依賴、.env 已填）
+# 複製本機 SSH public key 到 cert/（優先 ed25519，其次 rsa）
+task generate-ssh-key
+
+# 只產 seed.iso（已裝好依賴、.env 已填、cert/ 已有 key）
 task seed-iso
 ```
 
@@ -53,6 +54,14 @@ sudo cat /var/log/sentry-bootstrap.log
 ```
 
 ```bash
+# 本機 QEMU 靶場測試（需先把 Ubuntu ISO 放到 repo 根目錄）
+task test
+
+# 即時看安裝 log（另開 terminal 執行）
+tail -f /tmp/sentry-test-install.log
+```
+
+```bash
 # 升級 Sentry 版本（SSH 進 VM 後執行）
 cd /opt/sentry
 git fetch --tags && git checkout <new-version>
@@ -60,6 +69,41 @@ docker compose pull
 bash install.sh --skip-user-creation --no-user-prompt
 systemctl restart sentry
 ```
+
+---
+
+## 如何判讀 autoinstall log
+
+`task test` 的安裝過程全部寫到 `/tmp/sentry-test-install.log`。
+
+### 正常流程的關鍵訊息
+
+| 訊息 | 代表 |
+|------|------|
+| `start: subiquity/Early/apply_autoinstall_config` | autoinstall 設定開始套用，代表 seed.iso 讀取成功 |
+| `start: subiquity/Filesystem/_probe` | 開始偵測磁碟，準備分割 |
+| `start: subiquity/Install/install` | 主安裝開始（複製檔案到磁碟） |
+| `stage-curthooks` | 安裝後設定（apt、grub、kernel 等），最耗時 |
+| `finish: subiquity/Install/install` | 主安裝結束 |
+| `start: subiquity/Late/apply_autoinstall_config` | 執行 `user-data` 裡的 `late-commands` |
+| `Installation complete` / VM 關機 | 安裝成功，VM 會自動 poweroff |
+
+### 看錯誤
+
+```bash
+# 快速找 ERROR
+grep -i "error\|fail\|FAIL" /tmp/sentry-test-install.log | grep -v "^finish.*fail"
+
+# 找 crash
+grep -i "crash\|traceback" /tmp/sentry-test-install.log
+```
+
+### `finish:` 後面有 `FAIL` 是錯誤
+
+subiquity 的格式是：
+- `start: subiquity/Foo` → 開始
+- `finish: subiquity/Foo` → 成功（結尾不帶 FAIL）
+- `finish: subiquity/Foo: FAIL` → **失敗**，往上找同一個 step 的 error 訊息
 
 ---
 
@@ -87,6 +131,12 @@ SENTRY_LARAVEL_DSN=https://<key>@sentry.yourdomain.com/<project-id>
 SENTRY_TRACES_SAMPLE_RATE=0.1
 SENTRY_SEND_DEFAULT_PII=false
 ```
+
+---
+
+## TODO
+
+- [ ] **TTY autologin 安全風險**：目前 VM console（ESXi）不需密碼即可登入。需在 ESXi console 存取控制確認後，改為有密碼保護的方式（例如鎖定 TTY、或要求輸入密碼但不影響 SSH）。
 
 ---
 

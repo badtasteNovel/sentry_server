@@ -1,9 +1,12 @@
 version: '3'
 
+silent: true
+
+dotenv: ['autoinstall/.env']
+
 tasks:
 
   # ── Entry point ─────────────────────────────────────────────────────────────
-  # 執行 `task` 會依序：安裝缺少的工具 → 初始化 .env → 產出 seed.iso
   default:
     desc: "全流程：安裝相依套件 → 初始化 .env → 產出 seed.iso"
     cmds:
@@ -13,7 +16,6 @@ tasks:
       - task: seed-iso
 
   # ── 初始化 .env ─────────────────────────────────────────────────────────────
-  # 第一次使用時可單獨執行：task init
   init:
     desc: "複製 autoinstall/.env.example → autoinstall/.env（已存在則略過）"
     dir: autoinstall
@@ -27,10 +29,9 @@ tasks:
           echo "│                                                         │"
           echo "│  vim autoinstall/.env                                   │"
           echo "│                                                         │"
-          echo "│  必填：UBUNTU_PASSWORD_HASH  (openssl passwd -6 'pw')  │"
+          echo "│  必填：STATIC_IP / GATEWAY / DNS                       │"
           echo "│         SENTRY_DOMAIN                                   │"
-          echo "│         ADMIN_EMAIL                                     │"
-          echo "│         ADMIN_PASSWORD                                  │"
+          echo "│         ADMIN_EMAIL / ADMIN_PASSWORD                    │"
           echo "└─────────────────────────────────────────────────────────┘"
           echo ""
           exit 1
@@ -38,18 +39,141 @@ tasks:
           echo ".env 已存在，略過。"
         fi
 
+  # ── 產生並匯入 SSH Public Key ────────────────────────────────────────────────
+  generate-ssh-key:
+    desc: "產生 SSH key（若不存在）並複製 public key 到 cert/"
+    cmds:
+      - task: _install-gum
+      - |
+          KEY=~/.ssh/sentry_server_key
+          VM_IP="${STATIC_IP%%/*}"
+          PORT="${SSH_PORT:-2222}"
+
+          # 產生 key（若不存在）
+          if [ ! -f "$KEY" ]; then
+            echo "找不到 sentry_server_key，自動產生 ed25519 key pair..."
+            ssh-keygen -t ed25519 -N "" -f "$KEY"
+          fi
+
+          # 複製 public key 到 cert/
+          cp "${KEY}.pub" cert/sentry_server_key.pub
+          echo "已複製 public key → cert/sentry_server_key.pub"
+
+          # 問使用者是否在 WSL 環境
+          if gum confirm "是否在 WSL 環境中？（選 Yes 會同時將 key 複製到 Windows .ssh 資料夾）"; then
+            WIN_USER=$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r\n')
+            WIN_SSH_DIR="/mnt/c/Users/${WIN_USER}/.ssh"
+            mkdir -p "$WIN_SSH_DIR"
+            cp "$KEY" "$WIN_SSH_DIR/sentry_server_key"
+            cp "${KEY}.pub" "$WIN_SSH_DIR/sentry_server_key.pub"
+            chmod 600 "$WIN_SSH_DIR/sentry_server_key"
+            echo "已複製 key → ${WIN_SSH_DIR}/"
+            echo "可在 PowerShell 直接執行："
+            echo "  ssh -i ~\\.ssh\\sentry_server_key -p ${PORT} ubuntu@${VM_IP}"
+          else
+            echo "略過 Windows 複製，使用 WSL 連線："
+            echo "  ssh -i ~/.ssh/sentry_server_key -p ${PORT} ubuntu@${VM_IP}"
+          fi
+
+  # ── 驗證 user-data ──────────────────────────────────────────────────────────
+  validate:
+    desc: "產出 user-data 並驗證 YAML 語法、無殘留 placeholder"
+    dir: autoinstall
+    cmds:
+      - bash generate.sh
+      - python3 -c "import yaml, sys; yaml.safe_load(open('user-data')); print('YAML OK')"
+      - |
+        if grep -oE '__[A-Z_]+__' user-data; then
+          echo "ERROR: 上方有未替換的 placeholder"
+          exit 1
+        else
+          echo "Placeholder OK"
+        fi
+
   # ── 最終目標 ────────────────────────────────────────────────────────────────
   seed-iso:
     desc: "讀取 autoinstall/.env → 產出 user-data → 打包 autoinstall/seed.iso"
     dir: autoinstall
     cmds:
+      - task: validate
       - bash build-seed-iso.sh
+
+  # ── QEMU 本機測試靶場 ───────────────────────────────────────────────────────
+  test:
+    desc: "QEMU 本機跑完整 Ubuntu autoinstall 測試（需先把 Ubuntu ISO 放在 repo 根目錄）"
+    cmds:
+      - task: validate
+      - task: _install-qemu
+      - |
+        ISO="${UBUNTU_ISO:-ubuntu-24.04.4-live-server-amd64.iso}"
+        if [ ! -f "$ISO" ]; then
+          echo "ERROR: 找不到 $ISO"
+          echo "       請先下載放到 repo 根目錄：https://ubuntu.com/download/server"
+          exit 1
+        fi
+        # 從 ISO 抽出 kernel + initrd，讓我們能直接附加 autoinstall 參數
+        BOOT_DIR=/tmp/sentry-test-boot
+        mkdir -p "$BOOT_DIR"
+        if [ ! -f "$BOOT_DIR/vmlinuz" ]; then
+          echo "從 ISO 抽出 kernel..."
+          7z e "$ISO" casper/vmlinuz casper/initrd -o"$BOOT_DIR" -y > /dev/null
+        fi
+
+        DISK=/tmp/sentry-test.qcow2
+        rm -f "$DISK"
+        qemu-img create -f qcow2 "$DISK" 40G
+
+        KVM_FLAG=""
+        if [ -w /dev/kvm ]; then
+          KVM_FLAG="-enable-kvm -cpu host"
+          echo "KVM 加速已啟用，安裝約 5~10 分鐘"
+        else
+          echo "警告：KVM 不可用，純軟體模擬會非常慢"
+        fi
+        echo "安裝完成後 VM 會自動關機，task 結束即代表成功"
+        echo "即時 log：tail -f /tmp/sentry-test-install.log"
+        qemu-system-x86_64 \
+          $KVM_FLAG \
+          -m 4096 -smp 2 \
+          -kernel "$BOOT_DIR/vmlinuz" \
+          -initrd "$BOOT_DIR/initrd" \
+          -append "autoinstall console=ttyS0,115200n8 quiet ---" \
+          -drive "file=$ISO,media=cdrom,index=0,readonly=on" \
+          -drive "file=autoinstall/seed.iso,media=cdrom,index=1,readonly=on" \
+          -drive "file=$DISK,format=qcow2,index=2" \
+          -nographic \
+          -serial file:/tmp/sentry-test-install.log
+        echo ""
+        echo "=== 最後 20 行安裝 log ==="
+        tail -20 /tmp/sentry-test-install.log
 
   # ── Internal tasks ──────────────────────────────────────────────────────────
 
+  _install-qemu:
+    internal: true
+    status:
+      - command -v qemu-system-x86_64
+    cmds:
+      - cmd: sudo apt-get install -y qemu-system-x86 p7zip-full
+        platforms: [linux]
+      - cmd: brew install qemu p7zip
+        platforms: [darwin]
+
+  _install-gum:
+    internal: true
+    status:
+      - command -v gum
+    cmds:
+      - |
+        sudo mkdir -p /etc/apt/keyrings
+        curl -fsSL https://repo.charm.sh/apt/gpg.key \
+          | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" \
+          | sudo tee /etc/apt/sources.list.d/charm.list > /dev/null
+        sudo apt-get update -y && sudo apt-get install -y gum
+
   _install-python3:
     internal: true
-    desc: Install python3 if not present
     status:
       - command -v python3
     cmds:
@@ -60,13 +184,10 @@ tasks:
 
   _install-iso-tool:
     internal: true
-    desc: Install genisoimage (or xorriso on macOS) if no ISO builder is present
     status:
-      # 三擇一，有任何一個就略過
       - command -v genisoimage || command -v mkisofs || command -v xorriso
     cmds:
       - cmd: sudo apt-get update -y && sudo apt-get install -y genisoimage
         platforms: [linux]
       - cmd: brew install xorriso
         platforms: [darwin]
-

@@ -7,16 +7,19 @@ autoinstall:
     layout: us
     variant: ''
 
-  # VMware VMXNET3 → ens192 / E1000 → ens160，兩個都設 DHCP
   network:
     version: 2
     ethernets:
-      ens192:
-        dhcp4: true
-        optional: true
-      ens160:
-        dhcp4: true
-        optional: true
+      any-nic:
+        match:
+          name: "e*"
+        dhcp4: false
+        addresses: [__STATIC_IP__]
+        routes:
+          - to: default
+            via: __GATEWAY__
+        nameservers:
+          addresses: [__DNS__]
 
   # 系統裝在第一顆磁碟 (sda)，第二顆 (sdb) 由 bootstrap 格式化掛載成 /data
   storage:
@@ -26,12 +29,13 @@ autoinstall:
   identity:
     hostname: sentry
     username: ubuntu
-    password: '__UBUNTU_PASSWORD_HASH__'
+    password: '$6$1jky4ww2vEIfWdvq$kFXpAg2uILPpyv/50w6hKCxMeddRrGsJNso2f7Uo0Fr5XkH8q4u4.OZvTtpVXiNGUvFItwNU7CnMzG.9V3ie00'
 
   ssh:
     install-server: true
-    allow-pw: true
-    authorized-keys: []
+    allow-pw: false
+    authorized-keys:
+      - '__SSH_PUBLIC_KEY__'
 
   packages:
     - curl
@@ -40,10 +44,6 @@ autoinstall:
     - gnupg
     - lsb-release
     - jq
-    - nginx
-    - certbot
-    - python3-certbot-nginx
-    - unzip
 
   late-commands:
 
@@ -60,6 +60,7 @@ autoinstall:
       SMTP_USER="__SMTP_USER__"
       SMTP_PASSWORD="__SMTP_PASSWORD__"
       SMTP_USE_TLS="__SMTP_USE_TLS__"
+      SSH_PORT="__SSH_PORT__"
       DATA_DEVICE="/dev/sdb"
       DATA_MOUNT="/data"
       SENTRY_DIR="/opt/sentry"
@@ -192,6 +193,7 @@ autoinstall:
       systemctl enable sentry
 
       # ── Nginx + Let's Encrypt ─────────────────────────────────────────────
+      apt-get install -y nginx certbot python3-certbot-nginx
       mkdir -p /var/www/certbot
       cat > /etc/nginx/sites-available/sentry << NGINX_HTTP
       server {
@@ -233,6 +235,16 @@ autoinstall:
       nginx -t && systemctl reload nginx
       systemctl enable --now certbot.timer
 
+      # ── UFW ──────────────────────────────────────────────────────────────────
+      apt-get install -y ufw
+      sed -i 's/DEFAULT_FORWARD_POLICY="DROP"/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw
+      ufw default deny incoming
+      ufw default allow outgoing
+      ufw allow from 192.168.0.0/24 to any port "$SSH_PORT"
+      ufw allow 80/tcp
+      ufw allow 443/tcp
+      ufw --force enable
+
       # ── Start Sentry ──────────────────────────────────────────────────────
       systemctl start sentry
       echo "=== Bootstrap complete. Sentry $SENTRY_VERSION running at https://$DOMAIN ==="
@@ -243,7 +255,10 @@ autoinstall:
       os.chmod('/target/opt/sentry-bootstrap.sh', 0o755)
       PYEOF
 
-    # ── 3. Systemd first-boot service ─────────────────────────────────────
+    # ── 3. Custom SSH port ────────────────────────────────────────────────
+    - echo 'Port __SSH_PORT__' > /target/etc/ssh/sshd_config.d/99-custom.conf
+
+    # ── 4. Systemd first-boot service ─────────────────────────────────────
     - |
       cat > /target/etc/systemd/system/sentry-bootstrap.service << 'SVC'
       [Unit]
@@ -263,5 +278,9 @@ autoinstall:
       WantedBy=multi-user.target
       SVC
 
-    # ── 4. Enable first-boot service ───────────────────────────────────────
+    # ── 5. Enable first-boot service ───────────────────────────────────────
     - curtin in-target -- systemctl enable sentry-bootstrap.service
+
+    # ── 6. TTY autologin on console (ESXi VM console = admin-only access) ─
+    - mkdir -p /target/etc/systemd/system/getty@tty1.service.d
+    - printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin ubuntu --noclear %%I linux\n' > /target/etc/systemd/system/getty@tty1.service.d/autologin.conf

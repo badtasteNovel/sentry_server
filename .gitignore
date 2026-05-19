@@ -1,3 +1,11 @@
+# ISO files (too large for git)
+*.iso
+
+# Secrets
+autoinstall/.env
+cert/
+
+# Terraform (legacy)
 .terraform/
 .terraform.lock.hcl
 tfplan
