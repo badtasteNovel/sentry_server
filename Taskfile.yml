@@ -43,11 +43,9 @@ tasks:
   generate-ssh-key:
     desc: "產生 SSH key（若不存在）並複製 public key 到 cert/"
     cmds:
-      - task: _install-gum
       - |
           KEY=~/.ssh/sentry_server_key
-          VM_IP="${STATIC_IP%%/*}"
-          PORT="${SSH_PORT:-2222}"
+          CERT=cert/sentry_server_key.pub
 
           # 產生 key（若不存在）
           if [ ! -f "$KEY" ]; then
@@ -55,25 +53,18 @@ tasks:
             ssh-keygen -t ed25519 -N "" -f "$KEY"
           fi
 
-          # 複製 public key 到 cert/
-          cp "${KEY}.pub" cert/sentry_server_key.pub
-          echo "已複製 public key → cert/sentry_server_key.pub"
-
-          # 問使用者是否在 WSL 環境
-          if gum confirm "是否在 WSL 環境中？（選 Yes 會同時將 key 複製到 Windows .ssh 資料夾）"; then
-            WIN_USER=$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r\n')
-            WIN_SSH_DIR="/mnt/c/Users/${WIN_USER}/.ssh"
-            mkdir -p "$WIN_SSH_DIR"
-            cp "$KEY" "$WIN_SSH_DIR/sentry_server_key"
-            cp "${KEY}.pub" "$WIN_SSH_DIR/sentry_server_key.pub"
-            chmod 600 "$WIN_SSH_DIR/sentry_server_key"
-            echo "已複製 key → ${WIN_SSH_DIR}/"
-            echo "可在 PowerShell 直接執行："
-            echo "  ssh -i ~\\.ssh\\sentry_server_key -p ${PORT} ubuntu@${VM_IP}"
-          else
-            echo "略過 Windows 複製，使用 WSL 連線："
-            echo "  ssh -i ~/.ssh/sentry_server_key -p ${PORT} ubuntu@${VM_IP}"
+          # 若 cert/ 已有不同的 key，警告使用者
+          if [ -f "$CERT" ] && ! diff -q "${KEY}.pub" "$CERT" > /dev/null 2>&1; then
+            echo "WARNING: cert/ 已有不同的 public key，即將覆蓋"
+            echo "  舊：$(ssh-keygen -l -f "$CERT")"
+            echo "  新：$(ssh-keygen -l -f "${KEY}.pub")"
+            echo "  若 VM 已用舊 key 安裝，請重新產出 seed.iso 並重灌"
           fi
+
+          cp "${KEY}.pub" "$CERT"
+          echo "已同步 public key → $CERT"
+          echo "連線指令："
+          echo "  ssh -i ~/.ssh/sentry_server_key -p ${SSH_PORT:-2222} ubuntu@${STATIC_IP%%/*}"
 
   # ── 驗證 user-data ──────────────────────────────────────────────────────────
   validate:

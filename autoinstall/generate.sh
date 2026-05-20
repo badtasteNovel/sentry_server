@@ -40,7 +40,11 @@ export SSH_PUBLIC_KEY
 python3 - << PYEOF
 import os, re, sys
 
+with open('../scripts/first-boot-user-setup.sh') as _f:
+    _first_boot_script = _f.read()
+
 replacements = {
+    '__FIRST_BOOT_SETUP_SCRIPT__': repr(_first_boot_script),
     '__STATIC_IP__':            os.environ['STATIC_IP'],
     '__GATEWAY__':              os.environ['GATEWAY'],
     '__DNS__':                  os.environ['DNS'],

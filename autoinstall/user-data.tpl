@@ -164,7 +164,7 @@ autoinstall:
 
       # ── Run official installer ────────────────────────────────────────────
       export COMPOSE_PROFILES="$COMPOSE_PROFILE"
-      export SENTRY_ADMIN_USERNAME="$ADMIN_EMAIL"
+      export SENTRY_ADMIN_EMAIL="$ADMIN_EMAIL"
       export SENTRY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
       export SKIP_USER_CREATION=0
       bash install.sh --no-user-prompt
@@ -284,3 +284,17 @@ autoinstall:
     # ── 6. TTY autologin on console (ESXi VM console = admin-only access) ─
     - mkdir -p /target/etc/systemd/system/getty@tty1.service.d
     - printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin ubuntu --noclear %%I linux\n' > /target/etc/systemd/system/getty@tty1.service.d/autologin.conf
+
+    # ── 7. ubuntu 暫時給 passwordless sudo（首次設定完成後移除）─────────────
+    - echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/99-ubuntu-nopasswd
+    - chmod 440 /target/etc/sudoers.d/99-ubuntu-nopasswd
+
+    # ── 8. 首次登入使用者設定腳本 ────────────────────────────────────────────
+    - |
+      python3 - << 'PYEOF'
+      script = __FIRST_BOOT_SETUP_SCRIPT__
+      with open('/target/opt/first-boot-user-setup.sh', 'w') as f:
+          f.write(script)
+      import os; os.chmod('/target/opt/first-boot-user-setup.sh', 0o755)
+      PYEOF
+    - echo 'bash /opt/first-boot-user-setup.sh' >> /target/home/ubuntu/.bash_profile
