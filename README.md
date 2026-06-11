@@ -301,6 +301,39 @@ sudo chmod 700 /home/<NEW_USER>/.ssh
 sudo chmod 600 /home/<NEW_USER>/.ssh/authorized_keys
 ```
 
+#### 確認 .ssh 權限
+
+SSH 對權限非常嚴格，設錯會直接拒絕 key 登入，不會有任何提示。
+
+用 `ls -ld` 檢查：
+
+```bash
+ls -ld /home/<NEW_USER>/.ssh
+ls -l  /home/<NEW_USER>/.ssh/authorized_keys
+```
+
+正確輸出應長這樣：
+
+```
+drwx------ 2 <NEW_USER> <NEW_USER>  29 Jun 11 12:00 /home/<NEW_USER>/.ssh
+-rw------- 1 <NEW_USER> <NEW_USER> 572 Jun 11 12:00 /home/<NEW_USER>/.ssh/authorized_keys
+```
+
+| 項目 | 正確權限 | chmod | 說明 |
+|------|----------|-------|------|
+| `.ssh/` 目錄 | `700` (`drwx------`) | `chmod 700 ~/.ssh` | 只有擁有者可讀寫進入，其他人完全不能碰 |
+| `authorized_keys` | `600` (`-rw-------`) | `chmod 600 ~/.ssh/authorized_keys` | 只有擁有者可讀寫，其他人不能讀 |
+
+權限開太大（例如 `755` 或 `644`）時，SSH daemon 會認為這個檔案不安全而拒絕使用，key 登入就會失效並 fallback 要求密碼。
+
+若出問題，一次修正：
+
+```bash
+sudo chown -R <NEW_USER>:<NEW_USER> /home/<NEW_USER>/.ssh
+sudo chmod 700 /home/<NEW_USER>/.ssh
+sudo chmod 600 /home/<NEW_USER>/.ssh/authorized_keys
+```
+
 ### Step 6 — 以新帳號重新登入並確認
 
 開另一個終端機視窗，確認新帳號能正常登入且 sudo 可用，**不要關閉原來的 session**：
@@ -313,13 +346,25 @@ sudo whoami   # 應輸出 root（確認 sudo 權限正常）
 
 ### Step 7 — 刪除原 ubuntu 帳號
 
-確認新帳號運作正常後，再刪除 `ubuntu`：
+**確認你現在是用新帳號的 SSH session 操作**（不是 ubuntu）。
+
+由於安裝時設定了 tty1 autologin，ubuntu 會被自動登入到 tty1，必須先把 autologin 換成新帳號再重啟 getty，否則 `userdel` 會報錯：
 
 ```bash
+# 把 tty1 autologin 換成新帳號（$USER 即當前登入帳號）
+sudo sed -i "s/--autologin ubuntu/--autologin $USER/" \
+  /etc/systemd/system/getty@tty1.service.d/autologin.conf
+
+# 套用設定並重啟（ubuntu 的 tty1 session 會結束）
+sudo systemctl daemon-reload
+sudo systemctl restart getty@tty1
+
+# 確認 ubuntu 已無 process（只剩 grep 那行才算乾淨）
+ps aux | grep ubuntu
+
+# 刪除帳號與家目錄
 sudo userdel -r ubuntu
 ```
-
-- `-r`：同時刪除家目錄 `/home/ubuntu` 與 mail spool
 
 確認已刪除：
 
