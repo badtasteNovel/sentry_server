@@ -248,8 +248,6 @@ A: 確認 CD-ROM 2 有掛 seed.iso，且 seed.iso 的 volume label 是 `cidata`�
 **Q: bootstrap 跑到一半失敗？**  
 A: 查看完整 log：`sudo cat /var/log/sentry-bootstrap.log`
 
-**Q: Let's Encrypt 憑證申請失敗？**  
-A: 確認 `SENTRY_DOMAIN` 的 DNS A record 已指向這台 VM 的 IP，且 port 80 對外開放。
 
 **Q: 更新 Sentry 版本？**  
 ```bash
@@ -290,16 +288,6 @@ To                         Action      From
 --                         ------      ----
 2222                       ALLOW       192.168.0.0/24
 443                        ALLOW       192.168.0.0/24
-```
-
-### 憑證續期（每 90 天）
-
-certbot 自動續期需要 Let's Encrypt 從外網打 port 80 驗證，手動開放後再關：
-
-```bash
-sudo ufw allow 80/tcp
-sudo certbot renew
-sudo ufw delete allow 80/tcp
 ```
 
 ---

@@ -192,25 +192,13 @@ autoinstall:
       systemctl daemon-reload
       systemctl enable sentry
 
-      # ── Nginx + Let's Encrypt ─────────────────────────────────────────────
-      apt-get install -y nginx certbot python3-certbot-nginx
-      mkdir -p /var/www/certbot
-      cat > /etc/nginx/sites-available/sentry << NGINX_HTTP
-      server {
-          listen 80;
-          server_name $DOMAIN;
-          location /.well-known/acme-challenge/ { root /var/www/certbot; }
-          location / { return 301 https://\$host\$request_uri; }
-      }
-      NGINX_HTTP
-      ln -sf /etc/nginx/sites-available/sentry /etc/nginx/sites-enabled/sentry
-      rm -f /etc/nginx/sites-enabled/default
-      nginx -t && systemctl reload nginx
-
-      certbot certonly --webroot -w /var/www/certbot -d "$DOMAIN" \
-        --email "$ADMIN_EMAIL" --agree-tos --non-interactive --keep-until-expiring
-
-      cat > /etc/nginx/sites-available/sentry << NGINX_HTTPS
+      # ── Nginx + self-signed TLS ───────────────────────────────────────────
+      apt-get install -y nginx
+      openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+        -keyout /etc/ssl/private/sentry.key \
+        -out /etc/ssl/certs/sentry.crt \
+        -subj "/CN=$DOMAIN"
+      cat > /etc/nginx/sites-available/sentry << NGINX_CONF
       upstream sentry_web { server 127.0.0.1:9000; }
       server {
           listen 80; server_name $DOMAIN;
@@ -218,8 +206,8 @@ autoinstall:
       }
       server {
           listen 443 ssl http2; server_name $DOMAIN;
-          ssl_certificate     /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
-          ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+          ssl_certificate     /etc/ssl/certs/sentry.crt;
+          ssl_certificate_key /etc/ssl/private/sentry.key;
           ssl_protocols TLSv1.2 TLSv1.3;
           client_max_body_size 20m;
           location / {
@@ -231,9 +219,10 @@ autoinstall:
               proxy_read_timeout 120s;
           }
       }
-      NGINX_HTTPS
-      nginx -t && systemctl reload nginx
-      systemctl enable --now certbot.timer
+      NGINX_CONF
+      ln -sf /etc/nginx/sites-available/sentry /etc/nginx/sites-enabled/sentry
+      rm -f /etc/nginx/sites-enabled/default
+      nginx -t && systemctl enable --now nginx
 
       # ── UFW ──────────────────────────────────────────────────────────────────
       apt-get install -y ufw
