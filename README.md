@@ -184,6 +184,19 @@ composer require sentry/sentry-laravel
 
 登入 Sentry → **Settings → Projects → \<project\> → Client Keys (DSN)**
 
+1. 瀏覽器開 `https://sentry.yourdomain.com` 登入
+2. 左上角 **Projects** → **Create Project** → 選 **PHP** → 建立
+3. 建立後進入該 project → 左側選單 **Settings → Client Keys (DSN)**
+4. 頁面上會顯示完整 DSN，格式如下，直接複製整串：
+
+```
+https://a1b2c3d4e5f6g7h8@sentry.yourdomain.com/2
+        ────────────────                        ─
+             key（公鑰）                    project ID
+```
+
+> **不需要手動拼接**，直接把複製到的整串貼進 `.env` 的 `SENTRY_LARAVEL_DSN` 即可。
+
 ### 加入 .env
 
 ```ini
