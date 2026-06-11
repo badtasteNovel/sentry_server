@@ -61,7 +61,7 @@ autoinstall:
       SMTP_PASSWORD="__SMTP_PASSWORD__"
       SMTP_USE_TLS="__SMTP_USE_TLS__"
       SSH_PORT="__SSH_PORT__"
-      DATA_DEVICE="/dev/sdb"
+      DATA_DEVICE="/dev/sda"
       DATA_MOUNT="/data"
       SENTRY_DIR="/opt/sentry"
       CONF
@@ -91,7 +91,7 @@ autoinstall:
       systemctl enable --now docker
       usermod -aG docker ubuntu
 
-      # ── Format + mount /dev/sdb as /data ──────────────────────────────────
+      # ── Format + mount /dev/sda as /data ──────────────────────────────────
       for i in $(seq 1 30); do
         test -b "$DATA_DEVICE" && break
         echo "Waiting for $DATA_DEVICE... ($i/30)"
