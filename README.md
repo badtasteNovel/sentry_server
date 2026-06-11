@@ -247,3 +247,82 @@ docker compose pull
 bash install.sh --skip-user-creation --no-user-prompt
 systemctl restart sentry
 ```
+
+---
+
+## 建立新使用者並移除預設帳號
+
+Ubuntu 安裝後預設帳號為 `ubuntu`。建議建立自訂帳號後將其刪除。
+
+### Step 1 — SSH 登入 VM
+
+```bash
+ssh ubuntu@<VM_IP> -p <SSH_PORT>
+```
+
+### Step 2 — 建立新使用者
+
+```bash
+sudo useradd -m -s /bin/bash <NEW_USER>
+```
+
+- `-m`：自動建立家目錄 `/home/<NEW_USER>`
+- `-s /bin/bash`：預設 shell 設為 bash
+
+### Step 3 — 設定密碼
+
+```bash
+sudo passwd <NEW_USER>
+```
+
+輸入兩次新密碼即完成。
+
+### Step 4 — 加入 sudo 群組
+
+```bash
+sudo usermod -aG sudo <NEW_USER>
+```
+
+確認新帳號有 sudo 權限：
+
+```bash
+sudo -u <NEW_USER> sudo -l
+```
+
+輸出包含 `(ALL : ALL) ALL` 代表設定成功。
+
+### Step 5 — 複製 SSH 金鑰（若使用 key 登入）
+
+```bash
+sudo mkdir -p /home/<NEW_USER>/.ssh
+sudo cp ~/.ssh/authorized_keys /home/<NEW_USER>/.ssh/authorized_keys
+sudo chown -R <NEW_USER>:<NEW_USER> /home/<NEW_USER>/.ssh
+sudo chmod 700 /home/<NEW_USER>/.ssh
+sudo chmod 600 /home/<NEW_USER>/.ssh/authorized_keys
+```
+
+### Step 6 — 以新帳號重新登入並確認
+
+開另一個終端機視窗，確認新帳號能正常登入且 sudo 可用，**不要關閉原來的 session**：
+
+```bash
+ssh <NEW_USER>@<VM_IP> -p <SSH_PORT>
+whoami        # 應輸出 <NEW_USER>
+sudo whoami   # 應輸出 root（確認 sudo 權限正常）
+```
+
+### Step 7 — 刪除原 ubuntu 帳號
+
+確認新帳號運作正常後，再刪除 `ubuntu`：
+
+```bash
+sudo userdel -r ubuntu
+```
+
+- `-r`：同時刪除家目錄 `/home/ubuntu` 與 mail spool
+
+確認已刪除：
+
+```bash
+id ubuntu   # 應回傳 no such user
+```

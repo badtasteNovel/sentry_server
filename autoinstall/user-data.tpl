@@ -29,7 +29,7 @@ autoinstall:
   identity:
     hostname: sentry
     username: ubuntu
-    password: '$6$1jky4ww2vEIfWdvq$kFXpAg2uILPpyv/50w6hKCxMeddRrGsJNso2f7Uo0Fr5XkH8q4u4.OZvTtpVXiNGUvFItwNU7CnMzG.9V3ie00'
+    password: '$6$I3bgoiBXMnCrfgYd$7xzN.oI5Gn9vV7dFWgt4CcnrKku.fe7wqd7gbfcZzNBAFvaa3MroqIiB4TQV1wU/E8/fJ9k0ZfzkNLILJym82/'
 
   ssh:
     install-server: true
@@ -167,7 +167,7 @@ autoinstall:
       export SENTRY_ADMIN_EMAIL="$ADMIN_EMAIL"
       export SENTRY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
       export SKIP_USER_CREATION=0
-      bash install.sh --no-user-prompt
+      TERM=dumb NO_COLOR=1 bash install.sh --no-user-prompt
 
       # ── Sentry systemd service ────────────────────────────────────────────
       cat > /etc/systemd/system/sentry.service << SERVICE
@@ -285,16 +285,6 @@ autoinstall:
     - mkdir -p /target/etc/systemd/system/getty@tty1.service.d
     - printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin ubuntu --noclear %%I linux\n' > /target/etc/systemd/system/getty@tty1.service.d/autologin.conf
 
-    # ── 7. ubuntu 暫時給 passwordless sudo（首次設定完成後移除）─────────────
+    # ── 7. ubuntu passwordless sudo ──────────────────────────────────────────
     - echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/99-ubuntu-nopasswd
     - chmod 440 /target/etc/sudoers.d/99-ubuntu-nopasswd
-
-    # ── 8. 首次登入使用者設定腳本 ────────────────────────────────────────────
-    - |
-      python3 - << 'PYEOF'
-      script = __FIRST_BOOT_SETUP_SCRIPT__
-      with open('/target/opt/first-boot-user-setup.sh', 'w') as f:
-          f.write(script)
-      import os; os.chmod('/target/opt/first-boot-user-setup.sh', 0o755)
-      PYEOF
-    - echo 'bash /opt/first-boot-user-setup.sh' >> /target/home/ubuntu/.bash_profile

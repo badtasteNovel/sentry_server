@@ -66,9 +66,10 @@ tail -f /tmp/sentry-test-install.log
 cd /opt/sentry
 git fetch --tags && git checkout <new-version>
 docker compose pull
-bash install.sh --skip-user-creation --no-user-prompt
+TERM=dumb NO_COLOR=1 bash install.sh --skip-user-creation --no-user-prompt
 systemctl restart sentry
 ```
+# TERM=dumb NO_COLOR=1 避免 install.sh 輸出 Unicode 進度條（在 ESXi console 顯示為菱形）
 
 ---
 

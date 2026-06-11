@@ -172,7 +172,7 @@ export SENTRY_ADMIN_USERNAME="$ADMIN_EMAIL"
 export SENTRY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 export SKIP_USER_CREATION=0
 
-bash install.sh --no-user-prompt
+TERM=dumb NO_COLOR=1 bash install.sh --no-user-prompt
 
 # ─── 8. Create systemd service ────────────────────────────────────────────────
 
