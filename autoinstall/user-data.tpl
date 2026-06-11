@@ -241,8 +241,7 @@ autoinstall:
       ufw default deny incoming
       ufw default allow outgoing
       ufw allow from 192.168.0.0/24 to any port "$SSH_PORT"
-      ufw allow 80/tcp
-      ufw allow 443/tcp
+      ufw allow from 192.168.0.0/24 to any port 443
       ufw --force enable
 
       # ── Start Sentry ──────────────────────────────────────────────────────

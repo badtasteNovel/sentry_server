@@ -263,6 +263,47 @@ systemctl restart sentry
 
 ---
 
+## 防火牆（UFW）
+
+Bootstrap 自動設定好以下規則，只允許內網（`192.168.0.0/24`）存取：
+
+```bash
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow from 192.168.0.0/24 to any port 2222   # SSH
+sudo ufw allow from 192.168.0.0/24 to any port 443    # HTTPS
+sudo ufw --force enable
+```
+
+確認狀態：
+
+```bash
+sudo ufw status
+```
+
+正確輸出：
+
+```
+Status: active
+
+To                         Action      From
+--                         ------      ----
+2222                       ALLOW       192.168.0.0/24
+443                        ALLOW       192.168.0.0/24
+```
+
+### 憑證續期（每 90 天）
+
+certbot 自動續期需要 Let's Encrypt 從外網打 port 80 驗證，手動開放後再關：
+
+```bash
+sudo ufw allow 80/tcp
+sudo certbot renew
+sudo ufw delete allow 80/tcp
+```
+
+---
+
 ## 建立新使用者並移除預設帳號
 
 Ubuntu 安裝後預設帳號為 `ubuntu`。建議建立自訂帳號後將其刪除。
