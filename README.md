@@ -12,7 +12,7 @@ ESXi Host (128 GB RAM / 16 core)
     └── Sentry VM (Ubuntu 24.04, 4 vCPU, 16 GB RAM)
             ├── /dev/sda  100 GB  → 系統碟
             ├── /dev/sdb  200 GB  → /data（Sentry 資料，獨立磁碟）
-            ├── Nginx (80/443)  ← TLS via Let's Encrypt
+            ├── Nginx (80/443)  ← self-signed TLS
             │      └── proxy_pass → localhost:9000
             └── Docker Compose (Sentry self-hosted 26.x)
                    ├── web           :9000
@@ -151,7 +151,7 @@ task test
                          ├── 格式化 /dev/sdb → 掛載 /data
                          ├── clone sentry self-hosted
                          ├── 執行 install.sh（資料庫 migration 等）
-                         ├── 設定 Nginx + Let's Encrypt TLS
+                         ├── 設定 Nginx + self-signed TLS
                          └── 啟動 Sentry（約 15~20 分鐘）
 ```
 

@@ -118,33 +118,6 @@ autoinstall:
         https://github.com/getsentry/self-hosted.git "$SENTRY_DIR"
       cd "$SENTRY_DIR"
 
-      # ── Bind-mount docker volumes to /data ────────────────────────────────
-      cat > "$SENTRY_DIR/docker-compose.override.yml" << OVERRIDE
-      version: "3.9"
-      volumes:
-        sentry-postgres:
-          driver: local
-          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-postgres"}
-        sentry-redis:
-          driver: local
-          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-redis"}
-        sentry-zookeeper:
-          driver: local
-          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-zookeeper"}
-        sentry-kafka:
-          driver: local
-          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-kafka"}
-        sentry-clickhouse:
-          driver: local
-          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-clickhouse"}
-        sentry-symbolicator:
-          driver: local
-          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-symbolicator"}
-        sentry-uploads:
-          driver: local
-          driver_opts: {type: none, o: bind, device: "$DATA_MOUNT/sentry-uploads"}
-      OVERRIDE
-
       # ── Sentry config ─────────────────────────────────────────────────────
       cp sentry/config.example.yml sentry/config.yml
       cp sentry/sentry.conf.example.py sentry/sentry.conf.py
@@ -201,11 +174,13 @@ autoinstall:
       cat > /etc/nginx/sites-available/sentry << NGINX_CONF
       upstream sentry_web { server 127.0.0.1:9000; }
       server {
-          listen 80; server_name $DOMAIN;
+          listen 80;
+          server_name _;
           return 301 https://\$host\$request_uri;
       }
       server {
-          listen 443 ssl http2; server_name $DOMAIN;
+          listen 443 ssl http2;
+          server_name _;
           ssl_certificate     /etc/ssl/certs/sentry.crt;
           ssl_certificate_key /etc/ssl/private/sentry.key;
           ssl_protocols TLSv1.2 TLSv1.3;
