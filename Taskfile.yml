@@ -138,6 +138,21 @@ tasks:
         echo "=== 最後 20 行安裝 log ==="
         tail -20 /tmp/sentry-test-install.log
 
+  # ── 信任自簽憑證 ────────────────────────────────────────────────────────────
+  trust-cert:
+    desc: "下載 Sentry 自簽憑證並加入本機信任清單（需要 sudo）"
+    cmds:
+      - |
+        IP="${STATIC_IP%%/*}"
+        DOMAIN="${SENTRY_DOMAIN}"
+        CERT_FILE="/usr/local/share/ca-certificates/sentry-local.crt"
+        echo "從 $IP (SNI: $DOMAIN) 下載憑證..."
+        openssl s_client -connect "${IP}:443" -servername "$DOMAIN" </dev/null 2>/dev/null \
+          | openssl x509 -outform PEM \
+          | sudo tee "$CERT_FILE" > /dev/null
+        sudo update-ca-certificates
+        echo "憑證已加入信任清單：$CERT_FILE"
+
   # ── Internal tasks ──────────────────────────────────────────────────────────
 
   _install-qemu:
