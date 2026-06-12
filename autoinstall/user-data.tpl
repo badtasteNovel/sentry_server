@@ -122,6 +122,7 @@ autoinstall:
       cp sentry/config.example.yml sentry/config.yml
       cp sentry/sentry.conf.example.py sentry/sentry.conf.py
       sed -i "s|system.url-prefix:.*|system.url-prefix: 'https://$DOMAIN'|" sentry/config.yml
+      echo "CSRF_TRUSTED_ORIGINS = ['https://$DOMAIN']" >> sentry/sentry.conf.py
       if [[ -n "$SMTP_HOST" ]]; then
         cat >> sentry/config.yml << MAIL
 
