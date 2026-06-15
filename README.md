@@ -189,12 +189,18 @@ sudo journalctl -u sentry-bootstrap -f
 composer require sentry/sentry-laravel
 ```
 
+### 刪除預設 Project（若 DNS 顯示錯誤）
+
+安裝後 Sentry 可能建立預設 project，DNS hostname 不正確時需先刪除再重建：
+
+1. **Settings → Projects** → 點進要刪除的 project
+2. 左側選單最底部 **General**
+3. 最下方 **Danger Zone → Remove Project** → 輸入 project 名稱確認
+
 ### 取得 DSN
 
-登入 Sentry → **Settings → Projects → \<project\> → Client Keys (DSN)**
-
-1. 瀏覽器開 `https://sentry.yourdomain.com` 登入
-2. 左上角 **Projects** → **Create Project** → 選 **PHP** → 建立
+1. 瀏覽器開 `https://<sentry-dns>` 登入
+2. **Projects → Create Project** → 選 **PHP** → Project name 填 `lg-laravel` → **Create Project**
 3. 建立後進入該 project → 左側選單 **Settings → Client Keys (DSN)**
 4. 頁面上會顯示完整 DSN，格式如下，直接複製整串：
 
