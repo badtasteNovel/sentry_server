@@ -141,6 +141,7 @@ autoinstall:
       export SENTRY_ADMIN_EMAIL="$ADMIN_EMAIL"
       export SENTRY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
       export SKIP_USER_CREATION=0
+      export REPORT_SELF_HOSTED_ISSUES=0
       TERM=dumb NO_COLOR=1 bash install.sh --no-user-prompt
 
       # ── Sentry systemd service ────────────────────────────────────────────
