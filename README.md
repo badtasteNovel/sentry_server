@@ -413,3 +413,32 @@ sudo userdel -r ubuntu
 ```bash
 id ubuntu   # 應回傳 no such user
 ```
+
+---
+
+## 手動安裝（Bootstrap 失敗時）
+
+若 `sentry-bootstrap` 服務失敗，先查看 log 確認卡在哪一步：
+
+```bash
+sudo journalctl -u sentry-bootstrap -f
+sudo cat /var/log/sentry-bootstrap.log | tail -50
+```
+
+### Step 1 — 加入 docker 群組
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+**登出再重新 SSH 登入**，讓群組生效。
+
+### Step 2 — 執行 install.sh
+
+```bash
+cd /opt/sentry
+export REPORT_SELF_HOSTED_ISSUES=0
+TERM=dumb NO_COLOR=1 sudo -E bash install.sh --skip-user-creation --no-user-prompt
+```
+
+需要 10~20 分鐘，等跑完再繼續。
