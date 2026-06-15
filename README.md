@@ -533,13 +533,22 @@ sudo ss -tlnp | grep ':443'
 sudo systemctl reload nginx
 ```
 
-### 完成 — 查看登入帳號密碼
+### 完成 — 建立管理員帳號
+
+建立自訂帳號密碼的管理員：
+
+```bash
+cd /opt/sentry
+docker compose run --rm web sentry createuser --email <your@email.com> --password <password> --superuser
+```
+
+若需要查看 bootstrap 預設帳密：
 
 ```bash
 sudo grep -E "ADMIN_EMAIL|ADMIN_PASSWORD" /etc/sentry-install.conf
 ```
 
-記下帳號密碼後，刪除設定檔（內含明文密碼，不應長期留存）：
+記下後刪除設定檔（內含明文密碼，不應長期留存）：
 
 ```bash
 sudo rm /etc/sentry-install.conf
