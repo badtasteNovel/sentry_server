@@ -425,7 +425,11 @@ sudo journalctl -u sentry-bootstrap -f
 sudo cat /var/log/sentry-bootstrap.log | tail -50
 ```
 
-### Step 1 — 加入 docker 群組
+### Step 1 — 設定防火牆（UFW）
+
+參照上方 [防火牆（UFW）](#防火牆ufw) 章節，登入後第一件事先把防火牆設好。
+
+### Step 2 — 加入 docker 群組
 
 ```bash
 sudo usermod -aG docker $USER
@@ -433,7 +437,7 @@ sudo usermod -aG docker $USER
 
 **登出再重新 SSH 登入**，讓群組生效。
 
-### Step 2 — 執行 install.sh
+### Step 3 — 執行 install.sh
 
 ```bash
 cd /opt/sentry
@@ -442,3 +446,81 @@ TERM=dumb NO_COLOR=1 sudo -E bash install.sh --skip-user-creation --no-user-prom
 ```
 
 需要 10~20 分鐘，等跑完再繼續。
+
+### Step 4 — 建立 sentry systemd service
+
+```bash
+sudo tee /etc/systemd/system/sentry.service << 'EOF'
+[Unit]
+Description=Sentry self-hosted
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/sentry
+Environment=COMPOSE_PROFILES=errors-only
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable sentry
+```
+
+### Step 5 — 安裝 Nginx + 自簽憑證
+
+```bash
+sudo apt-get install -y nginx
+sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/sentry.key \
+  -out /etc/ssl/certs/sentry.crt \
+  -subj "/CN=$(grep ^DOMAIN /etc/sentry-install.conf | cut -d'"' -f2)"
+
+sudo tee /etc/nginx/sites-available/sentry << 'EOF'
+upstream sentry_web { server 127.0.0.1:9000; }
+server {
+    listen 80;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+server {
+    listen 443 ssl http2;
+    server_name _;
+    ssl_certificate     /etc/ssl/certs/sentry.crt;
+    ssl_certificate_key /etc/ssl/private/sentry.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 20m;
+    location / {
+        proxy_pass http://sentry_web;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+}
+EOF
+sudo ln -sf /etc/nginx/sites-available/sentry /etc/nginx/sites-enabled/sentry
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl enable --now nginx
+```
+
+### Step 6 — 修 CSRF 並啟動 Sentry
+
+```bash
+DOMAIN=$(grep ^DOMAIN /etc/sentry-install.conf | cut -d'"' -f2)
+echo "CSRF_TRUSTED_ORIGINS = ['https://${DOMAIN}']" | sudo tee -a /opt/sentry/sentry/sentry.conf.py
+sudo systemctl start sentry
+```
+
+等 1~2 分鐘後確認：
+
+```bash
+sudo systemctl status sentry
+```
