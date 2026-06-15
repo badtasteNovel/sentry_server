@@ -603,3 +603,32 @@ php artisan tinker
 ```
 
 回到 Sentry UI → **Issues**，應看到這筆錯誤出現。
+
+### 調整顯示時區
+
+Sentry 預設顯示 UTC，改成台灣時間：
+
+**右上角頭像 → Account → Timezone → Asia/Taipei → Save**
+
+### Issue 狀態管理
+
+點進任一 issue，右上角可以操作：
+
+| 動作 | 說明 |
+|------|------|
+| **Resolve** | 標記為已修復，從 Unresolved 移除 |
+| **Archive** | 暫時隱藏，之後若再次發生會重新出現 |
+| **Ignore** | 永久忽略（不再通知） |
+| **Assign** | 指派給特定成員處理 |
+
+### 切換 Issue 分類
+
+Issues 頁面左側可切換檢視：
+
+| 分類 | 說明 |
+|------|------|
+| **Unresolved** | 預設，所有未解決的錯誤 |
+| **For Review** | 需要人工確認的錯誤 |
+| **Regressed** | 曾 Resolve 後又再次發生 |
+| **Resolved** | 已標記為修復 |
+| **Archived** | 已封存 |
