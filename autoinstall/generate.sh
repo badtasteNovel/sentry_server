@@ -17,7 +17,7 @@ source .env
 set +a
 
 # Validate required vars
-for var in STATIC_IP GATEWAY DNS SSH_PORT SENTRY_DOMAIN ADMIN_EMAIL ADMIN_PASSWORD; do
+for var in STATIC_IP GATEWAY DNS SSH_PORT UBUNTU_PASSWORD_HASH SENTRY_DOMAIN ADMIN_EMAIL ADMIN_PASSWORD; do
   if [[ -z "${!var:-}" ]]; then
     echo "ERROR: $var is not set in .env"
     exit 1
@@ -41,6 +41,7 @@ python3 - << PYEOF
 import os, re, sys
 
 replacements = {
+    '__UBUNTU_PASSWORD_HASH__':  os.environ['UBUNTU_PASSWORD_HASH'],
     '__STATIC_IP__':            os.environ['STATIC_IP'],
     '__GATEWAY__':              os.environ['GATEWAY'],
     '__DNS__':                  os.environ['DNS'],

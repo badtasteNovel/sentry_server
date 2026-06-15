@@ -49,10 +49,19 @@ vim .env   # 第一次執行 task 時會自動建立此檔案
 
 | 欄位 | 說明 |
 |------|------|
-| `SENTRY_DOMAIN` | Sentry 的 domain，例如 `sentry.example.com`（需指向這台 VM 的 IP） |
+| `UBUNTU_PASSWORD_HASH` | Ubuntu 初始帳號密碼雜湊，裝完後會刪除此帳號（見下方產生方式） |
+| `SENTRY_DOMAIN` | Sentry 的 domain 或 IP，例如 `192.168.0.242` |
 | `ADMIN_EMAIL` | Sentry 登入帳號 |
 | `ADMIN_PASSWORD` | Sentry 登入密碼 |
 | `SMTP_*` | 不需要 email 通知就全部留空 |
+
+#### 產生 UBUNTU_PASSWORD_HASH
+
+```bash
+openssl passwd -6 'your-password'
+```
+
+將輸出的雜湊值貼入 `.env` 的 `UBUNTU_PASSWORD_HASH`。
 
 ### Step 2 — 匯入 SSH Public Key
 

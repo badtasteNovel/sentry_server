@@ -29,7 +29,7 @@ autoinstall:
   identity:
     hostname: sentry
     username: ubuntu
-    password: '$6$I3bgoiBXMnCrfgYd$7xzN.oI5Gn9vV7dFWgt4CcnrKku.fe7wqd7gbfcZzNBAFvaa3MroqIiB4TQV1wU/E8/fJ9k0ZfzkNLILJym82/'
+    password: '__UBUNTU_PASSWORD_HASH__'
 
   ssh:
     install-server: true
