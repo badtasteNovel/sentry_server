@@ -536,12 +536,14 @@ sudo systemctl reload nginx
 
 ### 完成 — 建立管理員帳號
 
-建立自訂帳號密碼的管理員：
+建立管理員帳號（互動模式，密碼不會出現在 history）：
 
 ```bash
 cd /opt/sentry
-docker compose run --rm web sentry createuser --email <your@email.com> --password <password> --superuser
+docker compose run --rm web sentry createuser
 ```
+
+依提示輸入 email、密碼，並選擇是否設為 superuser。
 
 若需要查看 bootstrap 預設帳密：
 
