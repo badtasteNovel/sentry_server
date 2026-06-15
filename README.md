@@ -608,7 +608,7 @@ php artisan tinker
 
 Sentry 預設顯示 UTC，改成台灣時間：
 
-**右上角頭像 → Account → Timezone → Asia/Taipei → Save**
+**左下角頭像 → User Settings → Timezone → Asia/Taipei → Save**
 
 ### Issue 狀態管理
 
