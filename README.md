@@ -524,3 +524,11 @@ sudo systemctl start sentry
 ```bash
 sudo systemctl status sentry
 ```
+
+確認 nginx 有在監聽 443（若輸出空白就 reload）：
+
+```bash
+sudo ss -tlnp | grep ':443'
+# 若沒有輸出：
+sudo systemctl reload nginx
+```
