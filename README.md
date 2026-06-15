@@ -513,9 +513,10 @@ sudo nginx -t && sudo systemctl enable --now nginx
 
 ### Step 6 — 修 CSRF 並啟動 Sentry
 
+將 `<sentry-dns>` 換成你實際用來存取 Sentry 的 hostname（例如 `sentry.local`）或 IP：
+
 ```bash
-DOMAIN=$(grep ^DOMAIN /etc/sentry-install.conf | cut -d'"' -f2)
-echo "CSRF_TRUSTED_ORIGINS = ['https://${DOMAIN}']" | sudo tee -a /opt/sentry/sentry/sentry.conf.py
+echo "CSRF_TRUSTED_ORIGINS = ['https://<sentry-dns>']" | sudo tee -a /opt/sentry/sentry/sentry.conf.py
 sudo systemctl start sentry
 ```
 
