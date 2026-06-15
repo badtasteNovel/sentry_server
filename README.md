@@ -532,3 +532,15 @@ sudo ss -tlnp | grep ':443'
 # 若沒有輸出：
 sudo systemctl reload nginx
 ```
+
+### 完成 — 查看登入帳號密碼
+
+```bash
+sudo grep -E "ADMIN_EMAIL|ADMIN_PASSWORD" /etc/sentry-install.conf
+```
+
+記下帳號密碼後，刪除設定檔（內含明文密碼，不應長期留存）：
+
+```bash
+sudo rm /etc/sentry-install.conf
+```
