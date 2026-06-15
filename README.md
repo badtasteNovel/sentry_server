@@ -50,7 +50,7 @@ vim .env   # 第一次執行 task 時會自動建立此檔案
 | 欄位 | 說明 |
 |------|------|
 | `UBUNTU_PASSWORD_HASH` | Ubuntu 初始帳號密碼雜湊，裝完後會刪除此帳號（見下方產生方式） |
-| `SENTRY_DOMAIN` | Sentry 的 domain 或 IP，例如 `192.168.0.242` |
+| `SENTRY_DOMAIN` | Sentry 的 domain 或 IP，例如 `192.168.0.242`（**此值決定 DSN 的 hostname**） |
 | `ADMIN_EMAIL` | Sentry 登入帳號 |
 | `ADMIN_PASSWORD` | Sentry 登入密碼 |
 | `SMTP_*` | 不需要 email 通知就全部留空 |
@@ -187,38 +187,6 @@ sudo journalctl -u sentry-bootstrap -f
 
 ```bash
 composer require sentry/sentry-laravel
-```
-
-### 刪除預設 Project（若 DNS 顯示錯誤）
-
-安裝後 Sentry 可能建立預設 project，DNS hostname 不正確時需先刪除再重建：
-
-1. **Settings → Projects** → 點進要刪除的 project
-2. 左側選單最底部 **General**
-3. 最下方 **Danger Zone → Remove Project** → 輸入 project 名稱確認
-
-### 取得 DSN
-
-1. 瀏覽器開 `https://<sentry-dns>` 登入
-2. **Projects → Create Project** → 選 **PHP** → Project name 填 `lg-laravel` → **Create Project**
-3. 建立後進入該 project → 左側選單 **Settings → Client Keys (DSN)**
-4. 頁面上會顯示完整 DSN，格式如下，直接複製整串：
-
-```
-https://a1b2c3d4e5f6g7h8@sentry.yourdomain.com/2
-        ────────────────                        ─
-             key（公鑰）                    project ID
-```
-
-> **不需要手動拼接**，直接把複製到的整串貼進 `.env` 的 `SENTRY_LARAVEL_DSN` 即可。
-
-### 加入 .env
-
-```ini
-SENTRY_LARAVEL_DSN=https://<key>@sentry.yourdomain.com/<project-id>
-SENTRY_TRACES_SAMPLE_RATE=0.1
-SENTRY_PROFILES_SAMPLE_RATE=0.1
-SENTRY_SEND_DEFAULT_PII=false
 ```
 
 ### 移除 Telescope
@@ -571,3 +539,67 @@ sudo grep -E "ADMIN_EMAIL|ADMIN_PASSWORD" /etc/sentry-install.conf
 ```bash
 sudo rm /etc/sentry-install.conf
 ```
+
+---
+
+## 操作
+
+### 建立 Project 並取得 DSN
+
+1. 瀏覽器開 `https://<sentry-dns>` 登入
+2. **Projects → Create Project** → 選 **PHP** → Project name 填 `lg-laravel` → **Create Project**
+3. 建立後進入該 project → 左側選單 **Settings → Client Keys (DSN)**
+4. 複製整串 DSN，格式如下：
+
+```
+https://a1b2c3d4e5f6g7h8@192.168.0.242/2
+        ────────────────               ─
+             key（公鑰）           project ID
+```
+
+### 加入 Laravel .env
+
+```ini
+SENTRY_LARAVEL_DSN=https://<key>@<sentry-dns>/<project-id>
+SENTRY_TRACES_SAMPLE_RATE=0.1
+SENTRY_PROFILES_SAMPLE_RATE=0.1
+SENTRY_SEND_DEFAULT_PII=false
+```
+
+自簽憑證需在 `config/sentry.php` 加入：
+
+```php
+'http_ssl_verify_peer' => false,
+```
+
+測試連線：
+
+```bash
+php artisan sentry:test
+```
+
+### 刪除 Project（DNS hostname 錯誤時）
+
+1. **Settings → Projects** → 點進要刪除的 project
+2. 左側選單最底部 **General**
+3. 最下方 **Danger Zone → Remove Project** → 輸入 project 名稱確認
+
+刪除後重新建立，DSN 就會帶正確的 hostname。
+
+### 查看 Exception
+
+Laravel 發生 exception 後，在 Sentry UI 的以下位置查看：
+
+- **Issues** — 所有 exception 列表，點進去可看完整 stack trace、發生時間、次數
+- **Issues → \<exception\>** — 右側可看 request 資訊、環境變數、麵包屑（breadcrumbs）
+- 左上角可用 **Project**、**時間區間**、**環境**（production/staging）篩選
+
+確認 exception 有被正確捕捉：
+
+```bash
+# 在 Laravel 製造一個測試錯誤
+php artisan tinker
+>>> throw new Exception('test error from production');
+```
+
+回到 Sentry UI → **Issues**，應看到這筆錯誤出現。
